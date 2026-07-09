@@ -1,0 +1,150 @@
+---
+title: "CDISC/ADaM Survival Analysis"
+author: "Vladislav Fedorov"
+date: "2026-07-09"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Baseline Demographics
+
+```{r}
+library(haven)
+
+adsl <- read_xpt("data/adsl.xpt")
+dim(adsl)
+colnames(adsl)
+table(adsl$ARM)
+```
+
+```{r}
+table(adsl$SAFFL)
+summary(adsl$AGE)
+```
+
+```{r}
+library(dplyr)
+adsl <- adsl |>
+  mutate(ARM = factor(ARM, levels = c("Placebo", "Xanomeline Low Dose", "Xanomeline High Dose")))
+adsl |>
+  group_by(ARM) |>
+  summarise(
+    n = n(),
+    mean_age = mean(AGE),
+    sd_age = sd(AGE),
+    pct_female = mean(SEX == "F") * 100, 
+    pct_white = mean(RACE == "WHITE") * 100
+    
+  )
+```
+
+
+# Adverse Event Summary
+
+```{r}
+adae <- read_xpt("data/adae.xpt")
+dim(adae)
+colnames(adae)
+```
+
+```{r}
+library(tidyr)
+adae_flag <- adae |> 
+  distinct(USUBJID) |> 
+  mutate(has_ae = TRUE)
+
+joined_ad <- adsl |> 
+  left_join(adae_flag, by = "USUBJID") |>
+  mutate(has_ae = replace_na(has_ae, FALSE))
+```
+
+```{r}
+joined_ad |>
+  group_by(ARM) |>
+  summarise(
+    n = n(),
+    ae_pct = mean(has_ae) * 100
+  )
+```
+
+### Top Adverse Events by Arm
+
+```{r}
+adae |>
+  left_join(adsl |> select(USUBJID, ARM), by = "USUBJID") |>
+  distinct(USUBJID, ARM, AEDECOD) |>
+  count(AEDECOD, ARM) |>
+  pivot_wider(names_from = ARM, values_from = n, values_fill = 0) |>
+  mutate(Total = rowSums(across(c(2:4))))|>
+  arrange(desc(Total)) |>
+  slice_head(n = 10)
+```
+
+# Time-to-Event Analysis
+
+
+```{r}
+adtte <- read_xpt("data/adtte.xpt")
+dim(adtte)
+colnames(adtte)
+table(adtte$PARAMCD)
+```
+
+```{r}
+adtte <- adtte |>
+  mutate(event = 1 - CNSR)
+```
+
+
+```{r}
+adtte_with_arm <- adtte |>
+  left_join(adsl |> select(USUBJID, ARM), by = "USUBJID") 
+```
+### Kaplan-Meier
+
+```{r}
+library(survival)
+
+km_fit <- survfit(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
+km_fit
+```
+
+
+
+```{r, fig.width=9, fig.height=7}
+#install.packages("survminer", dependencies = TRUE)
+library(ggpubr)
+library(survminer)
+
+ggsurvplot(
+  km_fit,
+  data = adtte_with_arm,
+  pval = TRUE,
+  risk.table = TRUE,
+  xlab = "Days",
+  legend.title = "Arm"
+)
+```
+
+```{r}
+cox_model <- coxph(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
+summary(cox_model)
+```
+
+
+```{r}
+cox.zph(cox_model)
+```
+
+
+### Age-Adjusted Cox Model
+
+```{r}
+cox_model_adj <- coxph(Surv(AVAL, event) ~ ARM + AGE, data = adtte_with_arm)
+summary(cox_model_adj)
+```

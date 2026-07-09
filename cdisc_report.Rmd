@@ -1,0 +1,86 @@
+---
+title: "CDISC/ADaM Survival Analysis Report"
+author: "Vladislav Fedorov"
+date: "2026-07-09"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r load-data}
+library(haven)
+library(dplyr)
+library(tidyr)
+library(survival)
+library(ggpubr)
+library(survminer)
+
+adsl <- read_xpt("data/adsl.xpt") |>
+  mutate(ARM = factor(ARM, levels = c("Placebo", "Xanomeline Low Dose", "Xanomeline High Dose")))
+
+adae <- read_xpt("data/adae.xpt")
+
+adtte <- read_xpt("data/adtte.xpt") |>
+  mutate(event = 1 - CNSR)
+
+adtte_with_arm <- adtte |>
+  left_join(adsl |> select(USUBJID, ARM), by = "USUBJID")
+```
+
+# 1. Baseline Demographics
+
+```{r table1, echo=TRUE}
+table1 <- adsl |>
+  group_by(ARM) |>
+  summarise(
+    n = n(),
+    mean_age = mean(AGE),
+    sd_age = sd(AGE),
+    pct_female = mean(SEX == "F") * 100,
+    pct_white = mean(RACE == "WHITE") * 100
+  )
+
+table1
+```
+
+For this Alzheimer treatment study, we are able to observe demographics across three treatment groups - Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study - ranging from 61.6% in Placebo to 47.6% in High Dose - does differ, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
+
+# 2. Adverse Event Summary
+
+```{r ae-prep}
+adae_flag <- adae |>
+  distinct(USUBJID) |>
+  mutate(has_ae = TRUE)
+
+joined_ad <- adsl |>
+  left_join(adae_flag, by = "USUBJID") |>
+  mutate(has_ae = replace_na(has_ae, FALSE))
+```
+
+```{r ae-summary, echo=TRUE}
+ae_summary <- joined_ad |>
+  group_by(ARM) |>
+  summarise(
+    n = n(),
+    ae_pct = mean(has_ae) * 100
+  )
+
+ae_summary
+```
+
+```{r top-aes, echo=TRUE}
+top_aes <- adae |>
+  left_join(adsl |> select(USUBJID, ARM), by = "USUBJID") |>
+  distinct(USUBJID, ARM, AEDECOD) |>
+  count(AEDECOD, ARM) |>
+  pivot_wider(names_from = ARM, values_from = n, values_fill = 0) |>
+  mutate(Total = rowSums(across(c(2:4)))) |>
+  arrange(desc(Total)) |>
+  slice_head(n = 10)
+
+top_aes
+```
