@@ -33,7 +33,21 @@ adtte_with_arm <- adtte |>
 
 # Introduction 
 
+This report presents a safety and efficacy analysis of the CDISC Pilot Study (CDISCPILOT01), a publicly released dataset built to CDISC SDTM and ADaM standards - the data formats used industry-wide for regulatory submissions to the FDA and EMA. The (fictional) trial randomized 254 subjects with mild-to-moderate Alzheimer's disease to Placebo, Xanomeline Low Dose, or Xanomeline High Dose, both active doses delivered via transdermal patch.
+
+The analysis follows a workflow representative of clinical statistical programming and biostatistics practice: baseline demographic characterization, adverse event summarization with formal statistical testing, and time-to-event analysis of a treatment-related safety endpoint. Xanomeline was historically associated with dermatologic tolerability issues due to its patch-based delivery, and this report specifically evaluates that pattern, examining whether adverse event rates and time to first dermatologic event differ meaningfully across treatment arms, and whether any observed differences are robust to statistical testing and confounding by age.
+
+Data source: [CDISC/PHUSE SDTM-ADaM Pilot Project](https://github.com/cdisc-org/sdtm-adam-pilot-project).
+
 # Methodology 
+
+Analysis was conducted on three ADaM (Analysis Data Model) datasets derived from CDISC SDTM source data: ADSL (subject-level data, containing one row per subject with demographics, treatment arm assignment, and population flags), ADAE (adverse event data, one row per reported event per subject), and ADTTE (time-to-event data, one row per subject for the dermatologic event endpoint, including event/censoring status). All analyses were restricted to the safety population, which in this dataset comprised all 254 randomized subjects.
+
+Baseline characteristics were summarized descriptively by treatment arm (mean and standard deviation for continuous variables, percentages for categorical variables). Adverse event incidence was summarized as the proportion of subjects experiencing at least one event per arm, with the ten most frequent events by MedDRA preferred term further examined using Fisher's exact test, comparing Placebo against the pooled Xanomeline arms; false discovery rate correction was applied across all ten tests to account for multiple comparisons.
+
+Time to first dermatologic event was analyzed using the Kaplan-Meier estimator, with between-arm differences assessed via log-rank test. A Cox proportional hazards model quantified the treatment effect as a hazard ratio relative to Placebo, with the proportional hazards assumption verified using Schoenfeld residual tests (`cox.zph`). A sensitivity analysis re-fit the Cox model adjusting for baseline age, to assess whether the treatment effect was confounded by age imbalance across arms.
+
+All analyses were conducted in R, using the `survival` and `survminer` packages for time-to-event modeling and visualization.
 
 # Baseline Demographics
 
@@ -48,10 +62,10 @@ table1 <- adsl |>
     pct_white = mean(RACE == "WHITE") * 100
   )
 
-table1
+knitr::kable(table1, digits = 1, caption = "Baseline Demographics by Treatment Arm")
 ```
 
-For this Alzheimer treatment study, we are able to observe demographics across three treatment groups - Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study - ranging from 61.6% in Placebo to 47.6% in High Dose - does differ, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
+For this Alzheimer treatment study, we are able to observe demographics across three treatment groups - Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study ranges from 61.6% in Placebo to 47.6% in High Dose, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
 
 # Adverse Event Summary
 
@@ -73,7 +87,7 @@ ae_summary <- joined_ad |>
     ae_pct = mean(has_ae) * 100
   )
 
-ae_summary
+knitr::kable(ae_summary, digits = 1, caption = "Summary of Adverse Events by Treatment")
 ```
 
 ```{r top-aes, echo=TRUE}
@@ -86,7 +100,8 @@ top_aes <- adae |>
   arrange(desc(Total)) |>
   slice_head(n = 10)
 
-top_aes
+knitr::kable(top_aes, digits = 1, caption = "10 Most Represented Adverse Events")
+
 ```
 
 From the general summary of the adverse events in the study, the placebo group, despite being marginally larger (86 vs. 84 in each dose arm), experienced fewer adverse events than low and high dose groups - 80.23% compared to 91.67% and 94.05% respectively. Beyond that, in the table of the 10 most frequent adverse events, 9 out of them are prevalent among the low and high dose groups, with only diarrhoea being more common in the placebo group. 
@@ -135,19 +150,42 @@ pooled_fisher_results <- pooled_fisher_results |>
   mutate(p_adj_fdr = p.adjust(p_value, method = "fdr")) |>
   arrange(p_value)
 
-pooled_fisher_results
+knitr::kable(pooled_fisher_results, digits = 5, caption = "Significance of the 10 Most Represented Adverse Events")
 ```
 
-Four events remained significant after correction: Application Site Pruritus, Pruritus, Application Site Erythema, and Dizziness (all adjusted p < 0.05). Notably, three of the four are dermatologic, consistent with the patch-delivery mechanism, while Dizziness stands out as the one significant finding that doesn't fit that explanation; it suggests the drug's effects are not purely local to the application site. Application Site Irritation, despite a visually striking raw split (18 dose-arm events vs. 3 placebo events), did not reach significance (adjusted p = 0.088), indicating that raw count differences alone are insufficient evidence without formal statistical testing.
+Four events remained significant after correction: Application Site Pruritus, Pruritus, Application Site Erythema, and Dizziness (all adjusted p < 0.05). Notably, three of the four are dermatologic, consistent with the patch-delivery mechanism, while Dizziness stands out as the one significant finding that doesn't fit that explanation; it suggests the drug's effects are not purely local to the application site. 
+
+Application Site Irritation, despite a visually striking raw split (18 dose-arm events vs. 3 placebo events), did not reach significance (adjusted p = 0.088), indicating that raw count differences alone are insufficient evidence without formal statistical testing.
+\vspace{1cm}
 
 # Time-to-Event Analysis
 
 ```{r km-fit, echo=TRUE}
 km_fit <- survfit(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
-km_fit
+
+n_events <- adtte_with_arm |>
+  group_by(ARM) |>
+  summarise(N = n(), Events = sum(event))
+
+km_table <- survminer::surv_median(km_fit)
+km_table$strata <- gsub("ARM=", "", km_table$strata)
+
+km_table <- km_table |>
+  left_join(n_events, by = c("strata" = "ARM")) |>
+  select(strata, N, Events, median, lower, upper)
+
+knitr::kable(km_table, digits = 1, col.names = c("Arm", "N", "Events", "Median", "Lower 95% CI", "Upper 95% CI"),
+             caption = "Kaplan-Meier Summary: Time to First Dermatologic Event")
 ```
 ```{r}
-summary(km_fit, times = max(adtte_with_arm$AVAL))$surv
+final_surv <- summary(km_fit, times = max(adtte_with_arm$AVAL), extend = TRUE)
+
+final_surv_df <- data.frame(
+  Arm = gsub("ARM=", "", as.character(final_surv$strata)),
+  Survival_Probability = final_surv$surv
+)
+
+knitr::kable(final_surv_df, digits = 3, caption = "Survival Probability at End of Follow-up")
 ```
 
 ```{r km-plot, fig.width=9, fig.height=7}
@@ -161,7 +199,7 @@ ggsurvplot(
 )
 ```
 
-Fitting the Kaplan-Meier model to time to first dermatologic event shows a median survival time of NA for the Placebo group. This is a structural result rather: since only 29 of 86 Placebo subjects (33.7%) experienced a dermatologic event, the survival curve never crosses the 50% threshold required to define a median. By the end of follow-up, survival probability in the Placebo group plateaus at approximately 0.63; roughly two-thirds of subjects on Placebo remained event-free for the full study period.
+Fitting the Kaplan-Meier model to time to first dermatologic event shows a median survival time of NA for the Placebo group. This is a structural result: since only 29 of 86 Placebo subjects (33.7%) experienced a dermatologic event, the survival curve never crosses the 50% threshold required to define a median. By the end of follow-up, survival probability in the Placebo group plateaus at approximately 0.63; roughly two-thirds of subjects on Placebo remained event-free for the full study period.
 
 Both Xanomeline arms reached a median: 33 days for Low Dose and 36 days for High Dose, meaning half of subjects on either dose experienced a dermatologic event within roughly a month of treatment start. The confidence intervals for these medians overlap substantially (95% CI: 28–51 days for Low Dose, 25–47 days for High Dose), indicating the two doses do not produce clearly distinguishable event timing despite differing in strength; this pattern is tested formally in the Cox model below.
 
@@ -170,11 +208,27 @@ Both Xanomeline arms reached a median: 33 days for Low Dose and 36 days for High
 
 ```{r cox-model, echo=TRUE}
 cox_model <- coxph(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
-summary(cox_model)
+
+cox_summary <- summary(cox_model)
+
+cox_table <- data.frame(
+  Arm = gsub("ARMXanomeline ", "", rownames(cox_summary$coefficients)),
+  HR = cox_summary$conf.int[, "exp(coef)"],
+  Lower_CI = cox_summary$conf.int[, "lower .95"],
+  Upper_CI = cox_summary$conf.int[, "upper .95"],
+  p_value = cox_summary$coefficients[, "Pr(>|z|)"]
+)
+
+cox_table$p_value <- ifelse(cox_table$p_value < 0.001, "<0.001", round(cox_table$p_value, 3))
+
+knitr::kable(cox_table, digits = 3, row.names = FALSE,
+             col.names = c("Arm", "HR", "Lower 95% CI", "Upper 95% CI", "p-value"),
+             caption = "Cox Proportional Hazards Model: Time to First Dermatologic Event")
 ```
 
 ```{r cox-ph-check, echo=TRUE}
-cox.zph(cox_model)
+knitr::kable(cox.zph(cox_model)$table, digits = 2,
+             caption = "Proportional Hazards Test (Schoenfeld Residuals)")
 ```
 
 The Cox model shows a hazard ratio of 4.15 for Low Dose and 5.03 for High Dose, meaning subjects on either dose face roughly four to five times the instantaneous hazard of a dermatologic event relative to Placebo at any point during follow-up. Both estimates are precise: the 95% confidence intervals (2.65–6.50 for Low Dose, 3.18–7.94 for High Dose) lie entirely above 1, consistent with the small p-values reported for each arm.
@@ -185,13 +239,55 @@ A proportional hazards test (`cox.zph`) returned p = 0.59 for both ARM and the g
 
 ```{r cox-age-adjusted, echo=TRUE}
 cox_model_adj <- coxph(Surv(AVAL, event) ~ ARM + AGE, data = adtte_with_arm)
-summary(cox_model_adj)
+
+cox_summary_adj <- summary(cox_model_adj)
+
+cox_table_adj <- data.frame(
+  Variable = gsub("ARMXanomeline ", "", rownames(cox_summary_adj$coefficients)),
+  HR = cox_summary_adj$conf.int[, "exp(coef)"],
+  Lower_CI = cox_summary_adj$conf.int[, "lower .95"],
+  Upper_CI = cox_summary_adj$conf.int[, "upper .95"],
+  p_value = cox_summary_adj$coefficients[, "Pr(>|z|)"]
+)
+
+cox_table_adj$p_value <- ifelse(cox_table_adj$p_value < 0.001, "<0.001", round(cox_table_adj$p_value, 3))
+
+knitr::kable(cox_table_adj, digits = 3, row.names = FALSE,
+             col.names = c("Variable", "HR", "Lower 95% CI", "Upper 95% CI", "p-value"),
+             caption = "Age-Adjusted Cox Proportional Hazards Model")
 ```
 
 ```{r}
-cox.zph(cox_model_adj)
+knitr::kable(cox.zph(cox_model_adj)$table, digits = 2,
+             caption = "Proportional Hazards Test, Age-Adjusted Model (Schoenfeld Residuals)")
 ```
-
-Now, the age-adjusted Cox model shows a hazard ratio of 4.22 for Low Dose and 5.08 for High Dose, which is relatively close to the values observed in the previous model, indicating age is not confounding the treatment effect. The precision of the estimates also remains consistent, with the 95% confidence intervals (2.69–6.63 for Low Dose, 3.21-8.03 for High Dose) still lying entirely above 1. Moreover, it is worth noting that age does not appear to be significant in the model fit with its p-value being above 0.05.
+The age-adjusted Cox model shows a hazard ratio of 4.22 for Low Dose and 5.08 for High Dose, which is relatively close to the values observed in the previous model, indicating age is not confounding the treatment effect. The precision of the estimates also remains consistent, with the 95% confidence intervals (2.69–6.63 for Low Dose, 3.21-8.03 for High Dose) still lying entirely above 1. Moreover, it is worth noting that age does not appear to be significant in the model fit with its p-value being above 0.05.
 
 A proportional hazards test for the age-adjusted model returned p = 0.57 for the ARM test, p = 0.53 for the age test, and p = 0.69 for the global test, also failing to reject the assumption that hazard ratios remain constant over time. This result is consistent with the previous model, while showing that newly added age is also proportional.
+
+# Conclusion
+
+Across all three analyses, adverse events and dermatologic risk increased in a clear dose-dependent pattern between Placebo and the two Xanomeline arms. Adverse event incidence rose from 80.2% (Placebo) to 91.7% (Low Dose) and 94.0% (High Dose), with the majority of frequently reported events being dermatologic in nature, consistent with the drug's transdermal patch delivery. Formal testing confirmed this pattern for four specific events: Application Site Pruritus, Pruritus, Application Site Erythema, and Dizziness, while demonstrating that at least one visually compelling raw difference (Application Site Irritation) did not hold up under correction, underscoring the value of statistical testing over count-based impressions alone.
+
+The time-to-event analysis quantified this pattern directly: subjects on either dose faced roughly four to five times the hazard of a dermatologic event relative to Placebo, an effect that remained stable and statistically robust after adjusting for baseline age. Age itself was not a significant predictor, and hazard ratios changed minimally between the unadjusted and adjusted models, indicating the observed treatment effect is not an artifact of age imbalance across arms.
+
+Taken together, these results point primarily to a dermatologic safety signal tied to patch-based delivery, though not exclusively - Dizziness remained significant even under formal testing, and Sinus Bradycardia showed a similar directional trend without reaching significance. Both are consistent with known systemic cholinergic effects of Xanomeline, suggesting the safety profile reflects both a localized delivery-site effect and, to an extent, the drug's systemic pharmacology.
+
+\newpage
+# References
+
+CDISC/PHUSE SDTM-ADaM Pilot Project. (n.d.). _SDTM-ADaM Pilot Project_ [Data set]. GitHub. https://github.com/cdisc-org/sdtm-adam-pilot-project
+
+R Core Team. (2024). *R: A language and environment for statistical computing*. R Foundation for Statistical Computing.
+
+Therneau T (2026). _A Package for Survival Analysis in R_. R package version 3.8-9, <https://CRAN.R-project.org/package=survival>.
+
+Terry M. Therneau, Patricia M. Grambsch (2000). _Modeling Survival Data: Extending the Cox Model_. Springer, New York. ISBN 0-387-98784-3.
+
+Kassambara A, Kosinski M, Biecek P (2026). _survminer: Drawing Survival Curves using 'ggplot2'_. R package version 0.5.2,
+
+Wickham H, Miller E, Smith D (2025). _haven: Import and Export 'SPSS', 'Stata' and 'SAS' Files_. R package version 2.5.5,
+
+Wickham H, François R, Henry L, Müller K, Vaughan D (2023). _dplyr: A Grammar of Data Manipulation_. R package version 1.1.4,
+
+Wickham H, Vaughan D, Girlich M (2024). _tidyr: Tidy Messy Data_. R package version 1.3.1, <https://CRAN.R-project.org/package=tidyr>.
