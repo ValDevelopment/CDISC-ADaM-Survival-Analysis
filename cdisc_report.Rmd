@@ -33,7 +33,7 @@ adtte_with_arm <- adtte |>
 
 # Introduction 
 
-This report presents a safety and efficacy analysis of the CDISC Pilot Study (CDISCPILOT01), a publicly released dataset built to CDISC SDTM and ADaM standards - the data formats used industry-wide for regulatory submissions to the FDA and EMA. The (fictional) trial randomized 254 subjects with mild-to-moderate Alzheimer's disease to Placebo, Xanomeline Low Dose, or Xanomeline High Dose, both active doses delivered via transdermal patch.
+This report presents a safety and efficacy analysis of the CDISC Pilot Study (CDISCPILOT01), a publicly released dataset built to CDISC SDTM and ADaM standards. These are the data formats used industry-wide for regulatory submissions to the FDA and EMA. The (fictional) trial randomized 254 subjects with mild-to-moderate Alzheimer's disease to Placebo, Xanomeline Low Dose, or Xanomeline High Dose, both active doses delivered via transdermal patch.
 
 The analysis follows a workflow representative of clinical statistical programming and biostatistics practice: baseline demographic characterization, adverse event summarization with formal statistical testing, and time-to-event analysis of a treatment-related safety endpoint. Xanomeline was historically associated with dermatologic tolerability issues due to its patch-based delivery, and this report specifically evaluates that pattern, examining whether adverse event rates and time to first dermatologic event differ meaningfully across treatment arms, and whether any observed differences are robust to statistical testing and confounding by age.
 
@@ -65,7 +65,7 @@ table1 <- adsl |>
 knitr::kable(table1, digits = 1, caption = "Baseline Demographics by Treatment Arm")
 ```
 
-For this Alzheimer treatment study, we are able to observe demographics across three treatment groups - Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study ranges from 61.6% in Placebo to 47.6% in High Dose, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
+For this Alzheimer treatment study, we are able to observe demographics across three treatment groups: Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study ranges from 61.6% in Placebo to 47.6% in High Dose, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
 
 # Adverse Event Summary
 
@@ -104,7 +104,7 @@ knitr::kable(top_aes, digits = 1, caption = "10 Most Represented Adverse Events"
 
 ```
 
-From the general summary of the adverse events in the study, the placebo group, despite being marginally larger (86 vs. 84 in each dose arm), experienced fewer adverse events than low and high dose groups - 80.23% compared to 91.67% and 94.05% respectively. Beyond that, in the table of the 10 most frequent adverse events, 9 out of them are prevalent among the low and high dose groups, with only diarrhoea being more common in the placebo group. 
+From the general summary of the adverse events in the study, the placebo group, despite being marginally larger (86 vs. 84 in each dose arm), experienced fewer adverse events than low and high dose groups: 80.23% compared to 91.67% and 94.05% respectively. Beyond that, in the table of the 10 most frequent adverse events, 9 out of them are prevalent among the low and high dose groups, with only diarrhoea being more common in the placebo group. 
 
 To formally assess whether individual adverse events differed between treatment and placebo, each of the ten most frequent events was tested using Fisher's exact test, comparing Placebo against the pooled Xanomeline arms (Low and High Dose combined), with false discovery rate correction applied across all ten tests to account for multiple comparisons. The two dose arms were pooled since both use the same compound at different strengths, making "does the drug cause this event" the relevant question.
 
@@ -150,7 +150,8 @@ pooled_fisher_results <- pooled_fisher_results |>
   mutate(p_adj_fdr = p.adjust(p_value, method = "fdr")) |>
   arrange(p_value)
 
-knitr::kable(pooled_fisher_results, digits = 5, caption = "Significance of the 10 Most Represented Adverse Events")
+knitr::kable(pooled_fisher_results, digits = 5, col.names = c("AEDECOD", "Number of Placebo Events", "Number of Dose Events", "p-value", "Adjusted p-value"),
+             caption = "Significance of the 10 Most Represented Adverse Events")
 ```
 
 Four events remained significant after correction: Application Site Pruritus, Pruritus, Application Site Erythema, and Dizziness (all adjusted p < 0.05). Notably, three of the four are dermatologic, consistent with the patch-delivery mechanism, while Dizziness stands out as the one significant finding that doesn't fit that explanation; it suggests the drug's effects are not purely local to the application site. 
@@ -185,7 +186,8 @@ final_surv_df <- data.frame(
   Survival_Probability = final_surv$surv
 )
 
-knitr::kable(final_surv_df, digits = 3, caption = "Survival Probability at End of Follow-up")
+knitr::kable(final_surv_df, digits = 3, col.names = c("Arm", "Survival Probability"),
+             caption = "Survival Probability at End of Follow-up")
 ```
 
 ```{r km-plot, fig.width=9, fig.height=7}
@@ -233,7 +235,7 @@ knitr::kable(cox.zph(cox_model)$table, digits = 2,
 
 The Cox model shows a hazard ratio of 4.15 for Low Dose and 5.03 for High Dose, meaning subjects on either dose face roughly four to five times the instantaneous hazard of a dermatologic event relative to Placebo at any point during follow-up. Both estimates are precise: the 95% confidence intervals (2.65–6.50 for Low Dose, 3.18–7.94 for High Dose) lie entirely above 1, consistent with the small p-values reported for each arm.
 
-A proportional hazards test (`cox.zph`) returned p = 0.59 for both ARM and the global test, failing to reject the assumption that hazard ratios remain constant over time. This validates reporting a single HR per arm as an honest summary of the entire follow-up period, rather than masking a treatment effect that changes shape over time
+A proportional hazards test (`cox.zph`) returned p = 0.59 for both ARM and the global test, so the assumption of constant hazard ratios over time holds. This means a single HR per arm is a valid summary across the full follow-up period.
 
 ## Age-Adjusted Cox Model
 
@@ -271,7 +273,7 @@ Across all three analyses, adverse events and dermatologic risk increased in a c
 
 The time-to-event analysis quantified this pattern directly: subjects on either dose faced roughly four to five times the hazard of a dermatologic event relative to Placebo, an effect that remained stable and statistically robust after adjusting for baseline age. Age itself was not a significant predictor, and hazard ratios changed minimally between the unadjusted and adjusted models, indicating the observed treatment effect is not an artifact of age imbalance across arms.
 
-Taken together, these results point primarily to a dermatologic safety signal tied to patch-based delivery, though not exclusively - Dizziness remained significant even under formal testing, and Sinus Bradycardia showed a similar directional trend without reaching significance. Both are consistent with known systemic cholinergic effects of Xanomeline, suggesting the safety profile reflects both a localized delivery-site effect and, to an extent, the drug's systemic pharmacology.
+Taken together, these results point primarily to a dermatologic safety signal tied to patch-based delivery, though not exclusively. Dizziness remained significant even under formal testing, and Sinus Bradycardia showed a similar directional trend without reaching significance. Both are consistent with known systemic cholinergic effects of Xanomeline, suggesting the safety profile reflects both a localized delivery-site effect and, to an extent, the drug's systemic pharmacology.
 
 \newpage
 # References
