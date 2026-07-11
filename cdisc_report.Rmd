@@ -31,7 +31,11 @@ adtte_with_arm <- adtte |>
   left_join(adsl |> select(USUBJID, ARM), by = "USUBJID")
 ```
 
-# 1. Baseline Demographics
+# Introduction 
+
+# Methodology 
+
+# Baseline Demographics
 
 ```{r table1, echo=TRUE}
 table1 <- adsl |>
@@ -49,7 +53,7 @@ table1
 
 For this Alzheimer treatment study, we are able to observe demographics across three treatment groups - Placebo, Low, and High doses of Xanomeline. The treatment groups are balanced in size, allowing for a more even analysis, with the age being close in mean across them as well. It is worth noting that percentage of female patients present in the study - ranging from 61.6% in Placebo to 47.6% in High Dose - does differ, potentially due to randomization noise and not a real imbalance. While the initial models in the analysis are univariate, knowing the demographics beforehand will aid in studying age-adjusted models in the later stages of this analysis.  
 
-# 2. Adverse Event Summary
+# Adverse Event Summary
 
 ```{r ae-prep}
 adae_flag <- adae |>
@@ -84,3 +88,95 @@ top_aes <- adae |>
 
 top_aes
 ```
+
+From the general summary of the adverse events in the study, the placebo group, despite being marginally larger (86 vs. 84 in each dose arm), experienced fewer adverse events than low and high dose groups - 80.23% compared to 91.67% and 94.05% respectively. Beyond that, in the table of the 10 most frequent adverse events, 9 out of them are prevalent among the low and high dose groups, with only diarrhoea being more common in the placebo group. 
+
+To formally assess whether individual adverse events differed between treatment and placebo, each of the ten most frequent events was tested using Fisher's exact test, comparing Placebo against the pooled Xanomeline arms (Low and High Dose combined), with false discovery rate correction applied across all ten tests to account for multiple comparisons. The two dose arms were pooled since both use the same compound at different strengths, making "does the drug cause this event" the relevant question.
+
+```{r}
+top_ae_terms <- top_aes$AEDECOD
+
+arm_totals <- adsl |> count(ARM) |> pull(n, name = ARM)
+dose_n <- arm_totals["Xanomeline Low Dose"] + arm_totals["Xanomeline High Dose"]
+placebo_n <- arm_totals["Placebo"]
+
+ae_events <- adae |>
+  left_join(adsl |> select(USUBJID, ARM), by = "USUBJID") |>
+  distinct(USUBJID, ARM, AEDECOD) |>
+  filter(AEDECOD %in% top_ae_terms) |>
+  count(AEDECOD, ARM)
+
+pooled_fisher_results <- lapply(top_ae_terms, function(term) {
+  term_data <- ae_events |> filter(AEDECOD == term)
+
+  placebo_events <- term_data$n[term_data$ARM == "Placebo"]
+  if (length(placebo_events) == 0) placebo_events <- 0
+
+  dose_events <- sum(term_data$n[term_data$ARM != "Placebo"])
+
+  tab <- matrix(
+    c(placebo_events, placebo_n - placebo_events,
+      dose_events, dose_n - dose_events),
+    nrow = 2,
+    dimnames = list(c("Event", "No Event"), c("Placebo", "Any Dose"))
+  )
+
+  p <- fisher.test(tab)$p.value
+
+  data.frame(
+    AEDECOD = term,
+    placebo_n_event = placebo_events,
+    dose_n_event = dose_events,
+    p_value = p
+  )
+}) |> bind_rows()
+
+pooled_fisher_results <- pooled_fisher_results |>
+  mutate(p_adj_fdr = p.adjust(p_value, method = "fdr")) |>
+  arrange(p_value)
+
+pooled_fisher_results
+```
+
+Four events remained significant after correction: Application Site Pruritus, Pruritus, Application Site Erythema, and Dizziness (all adjusted p < 0.05). Notably, three of the four are dermatologic, consistent with the patch-delivery mechanism, while Dizziness stands out as the one significant finding that doesn't fit that explanation; it suggests the drug's effects are not purely local to the application site. Application Site Irritation, despite a visually striking raw split (18 dose-arm events vs. 3 placebo events), did not reach significance (adjusted p = 0.088), indicating that raw count differences alone are insufficient evidence without formal statistical testing.
+
+# Time-to-Event Analysis
+
+```{r km-fit, echo=TRUE}
+km_fit <- survfit(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
+km_fit
+```
+```{r}
+summary(km_fit, times = max(adtte_with_arm$AVAL))$surv
+```
+
+```{r km-plot, fig.width=9, fig.height=7}
+ggsurvplot(
+  km_fit,
+  data = adtte_with_arm,
+  pval = TRUE,
+  risk.table = TRUE,
+  xlab = "Days",
+  legend.title = "Arm"
+)
+```
+
+Fitting the Kaplan-Meier model to time to first dermatologic event shows a median survival time of NA for the Placebo group. This is a structural result rather: since only 29 of 86 Placebo subjects (33.7%) experienced a dermatologic event, the survival curve never crosses the 50% threshold required to define a median. By the end of follow-up, survival probability in the Placebo group plateaus at approximately 0.63; roughly two-thirds of subjects on Placebo remained event-free for the full study period.
+
+Both Xanomeline arms reached a median: 33 days for Low Dose and 36 days for High Dose, meaning half of subjects on either dose experienced a dermatologic event within roughly a month of treatment start. The confidence intervals for these medians overlap substantially (95% CI: 28–51 days for Low Dose, 25–47 days for High Dose), indicating the two doses do not produce clearly distinguishable event timing despite differing in strength; this pattern is tested formally in the Cox model below.
+
+
+## Cox Proportional Hazards Model
+
+```{r cox-model, echo=TRUE}
+cox_model <- coxph(Surv(AVAL, event) ~ ARM, data = adtte_with_arm)
+summary(cox_model)
+```
+
+```{r cox-ph-check, echo=TRUE}
+cox.zph(cox_model)
+```
+
+The Cox model shows a hazard ratio of 4.15 for Low Dose and 5.03 for High Dose, meaning subjects on either dose face roughly four to five times the instantaneous hazard of a dermatologic event relative to Placebo at any point during follow-up. Both estimates are precise: the 95% confidence intervals (2.65–6.50 for Low Dose, 3.18–7.94 for High Dose) lie entirely above 1, consistent with the small p-values reported for each arm.
+
+A proportional hazards test (`cox.zph`) returned p = 0.59 for both ARM and the global test, failing to reject the assumption that hazard ratios remain constant over time. This validates reporting a single HR per arm as an honest summary of the entire follow-up period, rather than masking a treatment effect that changes shape over time
