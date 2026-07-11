@@ -180,3 +180,18 @@ cox.zph(cox_model)
 The Cox model shows a hazard ratio of 4.15 for Low Dose and 5.03 for High Dose, meaning subjects on either dose face roughly four to five times the instantaneous hazard of a dermatologic event relative to Placebo at any point during follow-up. Both estimates are precise: the 95% confidence intervals (2.65–6.50 for Low Dose, 3.18–7.94 for High Dose) lie entirely above 1, consistent with the small p-values reported for each arm.
 
 A proportional hazards test (`cox.zph`) returned p = 0.59 for both ARM and the global test, failing to reject the assumption that hazard ratios remain constant over time. This validates reporting a single HR per arm as an honest summary of the entire follow-up period, rather than masking a treatment effect that changes shape over time
+
+## Age-Adjusted Cox Model
+
+```{r cox-age-adjusted, echo=TRUE}
+cox_model_adj <- coxph(Surv(AVAL, event) ~ ARM + AGE, data = adtte_with_arm)
+summary(cox_model_adj)
+```
+
+```{r}
+cox.zph(cox_model_adj)
+```
+
+Now, the age-adjusted Cox model shows a hazard ratio of 4.22 for Low Dose and 5.08 for High Dose, which is relatively close to the values observed in the previous model, indicating age is not confounding the treatment effect. The precision of the estimates also remains consistent, with the 95% confidence intervals (2.69–6.63 for Low Dose, 3.21-8.03 for High Dose) still lying entirely above 1. Moreover, it is worth noting that age does not appear to be significant in the model fit with its p-value being above 0.05.
+
+A proportional hazards test for the age-adjusted model returned p = 0.57 for the ARM test, p = 0.53 for the age test, and p = 0.69 for the global test, also failing to reject the assumption that hazard ratios remain constant over time. This result is consistent with the previous model, while showing that newly added age is also proportional.
