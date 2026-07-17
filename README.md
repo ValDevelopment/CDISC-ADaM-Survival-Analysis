@@ -12,11 +12,11 @@ The analysis follows a real pharmaceutical statistical programming/biostatistics
 
 ## Key Findings
 
-- **Adverse events** occurred in 80.2% of Placebo patients, vs. 91.7% (Low Dose) and 94.0% (High Dose): a clear dose-response pattern.
-- The AEs driving this were predominantly dermatologic (pruritus, application-site erythema, rash), consistent with a transdermal patch delivery mechanism, though not exclusively: Dizziness remained significant after formal testing, pointing to some systemic effect as well.
-- **Time-to-first-dermatologic-event** analysis (Kaplan-Meier, log-rank p < 0.0001) showed both dose arms had a significantly higher hazard than Placebo: **HR = 4.15 (Low Dose)** and **HR = 5.03 (High Dose)**, 95% CIs entirely above 1.
-- The proportional hazards assumption held (`cox.zph` p = 0.59), validating the Cox model.
-- An age-adjusted sensitivity analysis showed hazard ratios were essentially unchanged (4.22 / 5.08), and age was not a significant predictor (p = 0.133): the dose-response signal is not confounded by age.
+- **Adverse events** occurred in 80.2% of Placebo patients, compared with 91.7% (Low Dose) and 94.0% (High Dose), demonstrating a clear dose-response pattern.
+- The adverse events driving this pattern were predominantly dermatologic (pruritus, application-site erythema, rash), consistent with a transdermal patch delivery mechanism. Dizziness also remained significant after formal testing, however, suggesting an additional systemic effect.
+- **Time-to-first-dermatologic-event** analysis (Kaplan-Meier, log-rank p < 0.0001) demonstrated significantly higher hazard in both dose arms relative to placebo (**HR = 4.15, Low Dose**; **HR = 5.03, High Dose**), with 95% confidence intervals entirely above 1.
+- The proportional hazards assumption was satisfied (`cox.zph` p = 0.59), supporting the validity of the Cox model.
+- An age-adjusted sensitivity analysis showed hazard ratios remained essentially unchanged (4.22 / 5.08), and age was not a significant predictor (p = 0.133), indicating that the dose-response signal is not confounded by age.
 
 ## Repo Structure
 
@@ -27,8 +27,8 @@ The analysis follows a real pharmaceutical statistical programming/biostatistics
 └── README.md
 ```
 
-- **`pipeline.Rmd`** is the working analysis: every data check, intermediate step, and model diagnostic, with all code visible. This is the "show your work" version.
-- **`report.Rmd`** is the polished write-up: narrative interpretation alongside the key tables, plots, and models, with routine data-wrangling code hidden and analysis code visible.
+- **`pipeline.Rmd`** contains the complete exploratory analysis, including every data check, intermediate step, and model diagnostic, with all code visible. This document provides a full, transparent record of the analytical process.
+- **`report.Rmd`** presents the formatted write-up: narrative interpretation alongside the key tables, plots, and models, with routine data-wrangling code hidden and analysis code visible.
 
 ## Methods
 
